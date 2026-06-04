@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import curses
 from dataclasses import dataclass
+from pathlib import Path
 
 from sudoku_solver import GRID_WIDTH, format_grid, iter_solutions, validate_givens
 
@@ -22,6 +23,7 @@ RESULT_TOP = GRID_TOP
 RESULT_LEFT = GRID_LEFT + 31
 MIN_HEIGHT = 24
 MIN_WIDTH = 64
+OUTPUT_PATH = Path("sudoku_solutions.txt")
 
 
 @dataclass
@@ -33,6 +35,7 @@ class AppState:
     status: str = "Enter digits, then resolve."
     result_count: int | None = None
     first_solution: str | None = None
+    output_path: str | None = None
 
 
 def grid_string(cells: list[str]) -> str:
@@ -121,6 +124,9 @@ def draw(stdscr: curses.window, state: AppState) -> None:
         else:
             add_text(stdscr, RESULT_TOP + 2, RESULT_LEFT, "No first solution available.")
 
+        if state.output_path:
+            add_text(stdscr, BUTTON_ROW + 1, BUTTON_LEFT, f"File: {state.output_path}")
+
     stdscr.refresh()
 
 
@@ -150,6 +156,7 @@ def clear_current_cell(state: AppState) -> None:
         state.status = "Cell cleared."
         state.result_count = None
         state.first_solution = None
+        state.output_path = None
 
 
 def set_current_cell(state: AppState, digit: str) -> None:
@@ -160,6 +167,7 @@ def set_current_cell(state: AppState, digit: str) -> None:
     state.status = f"Set row {state.row + 1}, column {state.col + 1}."
     state.result_count = None
     state.first_solution = None
+    state.output_path = None
 
     if state.col < GRID_WIDTH - 1:
         state.col += 1
@@ -174,6 +182,7 @@ def resolve_current_grid(stdscr: curses.window, state: AppState) -> None:
     grid = grid_string(state.cells)
     state.result_count = 0
     state.first_solution = None
+    state.output_path = None
 
     try:
         validate_givens(grid)
@@ -182,21 +191,33 @@ def resolve_current_grid(stdscr: curses.window, state: AppState) -> None:
         state.status = f"Invalid puzzle: {exc}"
         return
 
-    state.status = "Resolving all solutions..."
+    try:
+        output_file = OUTPUT_PATH.open("w", encoding="utf-8")
+    except OSError as exc:
+        state.result_count = None
+        state.status = f"Could not open {OUTPUT_PATH}: {exc}"
+        return
+
+    state.output_path = str(OUTPUT_PATH)
+    state.status = f"Resolving all solutions into {OUTPUT_PATH}..."
     draw(stdscr, state)
 
-    for solution in iter_solutions(grid):
-        state.result_count += 1
-        if state.first_solution is None:
-            state.first_solution = solution
+    with output_file:
+        for solution in iter_solutions(grid):
+            state.result_count += 1
+            if state.first_solution is None:
+                state.first_solution = solution
 
-        state.status = f"Resolving... found {state.result_count} so far."
-        draw(stdscr, state)
+            output_file.write(solution + "\n")
+            output_file.flush()
+
+            state.status = f"Resolving... found {state.result_count} so far."
+            draw(stdscr, state)
 
     if state.result_count == 0:
-        state.status = "Done. No solutions found."
+        state.status = f"Done. No solutions found. Wrote empty {OUTPUT_PATH}."
     else:
-        state.status = "Done."
+        state.status = f"Done. Wrote {state.result_count} to {OUTPUT_PATH}."
 
 
 def handle_key(stdscr: curses.window, state: AppState, key: int) -> bool:
