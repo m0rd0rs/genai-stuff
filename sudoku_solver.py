@@ -117,14 +117,14 @@ def iter_digit_masks(mask: int) -> Iterable[int]:
         mask ^= digit_mask
 
 
-def solve_all(grid: str, max_solutions: int | None = None) -> list[str]:
-    """Return every solution found by recursive backtracking."""
+def iter_solutions(grid: str, max_solutions: int | None = None) -> Iterable[str]:
+    """Yield each solution found by recursive backtracking."""
     board = list(grid)
     row_masks = [0] * GRID_WIDTH
     col_masks = [0] * GRID_WIDTH
     box_masks = [0] * GRID_WIDTH
     empty_cells: set[int] = set()
-    solutions: list[str] = []
+    solutions_found = 0
 
     for index, value in enumerate(board):
         row, col = divmod(index, GRID_WIDTH)
@@ -163,12 +163,15 @@ def solve_all(grid: str, max_solutions: int | None = None) -> list[str]:
 
         return best_index, best_mask
 
-    def search() -> None:
-        if max_solutions is not None and len(solutions) >= max_solutions:
+    def search() -> Iterable[str]:
+        nonlocal solutions_found
+
+        if max_solutions is not None and solutions_found >= max_solutions:
             return
 
         if not empty_cells:
-            solutions.append("".join(board))
+            solutions_found += 1
+            yield "".join(board)
             return
 
         index, mask = choose_cell()
@@ -185,20 +188,24 @@ def solve_all(grid: str, max_solutions: int | None = None) -> list[str]:
             col_masks[col] |= digit_mask
             box_masks[box] |= digit_mask
 
-            search()
+            yield from search()
 
             row_masks[row] ^= digit_mask
             col_masks[col] ^= digit_mask
             box_masks[box] ^= digit_mask
             board[index] = "0"
 
-            if max_solutions is not None and len(solutions) >= max_solutions:
+            if max_solutions is not None and solutions_found >= max_solutions:
                 break
 
         empty_cells.add(index)
 
-    search()
-    return solutions
+    yield from search()
+
+
+def solve_all(grid: str, max_solutions: int | None = None) -> list[str]:
+    """Return every solution found by recursive backtracking."""
+    return list(iter_solutions(grid, max_solutions))
 
 
 def parse_args() -> argparse.Namespace:
@@ -242,29 +249,32 @@ def main() -> int:
     print(format_grid(grid))
     print()
 
-    solutions = solve_all(grid, args.max_solutions)
     output_path = Path(args.output)
-    output_path.write_text(
-        "\n".join(solutions) + ("\n" if solutions else ""), encoding="utf-8"
-    )
+    solution_count = 0
 
-    if not solutions:
+    with output_path.open("w", encoding="utf-8") as output_file:
+        for solution_count, solution in enumerate(
+            iter_solutions(grid, args.max_solutions), start=1
+        ):
+            output_file.write(solution + "\n")
+            output_file.flush()
+
+            print(f"Solution {solution_count}:")
+            print(format_grid(solution))
+            print(solution)
+            print(flush=True)
+
+    if solution_count == 0:
         print("No solutions found.")
         print(f"Wrote empty result file: {output_path}")
         return 1
 
-    for number, solution in enumerate(solutions, start=1):
-        print(f"Solution {number}:")
-        print(format_grid(solution))
-        print(solution)
-        print()
-
     limit_note = ""
-    if args.max_solutions is not None and len(solutions) >= args.max_solutions:
+    if args.max_solutions is not None and solution_count >= args.max_solutions:
         limit_note = f" Reached --max-solutions={args.max_solutions}."
 
-    plural = "solution" if len(solutions) == 1 else "solutions"
-    print(f"Found {len(solutions)} {plural}.{limit_note}")
+    plural = "solution" if solution_count == 1 else "solutions"
+    print(f"Found {solution_count} {plural}.{limit_note}")
     print(f"Wrote solution strings to: {output_path}")
     return 0
 
